@@ -204,7 +204,7 @@ Choosing a solver
 ^^^^^^^^^^^^^^^^^
 
 CVXPY is distributed with the open source solvers `ECOS`_, `ECOS_BB`_, `CVXOPT`_, and `SCS`_.
-CVXPY also supports `GLPK`_ and `GLPK_MI`_ via the CVXOPT GLPK interface, `CBC`_, `MOSEK`_, `GUROBI`_, and `Elemental`_.
+CVXPY also supports `GLPK`_ and `GLPK_MI`_ via the CVXOPT GLPK interface, `CBC`_, `MOSEK`_, `GUROBI`_, `Elemental`_, and `CPLEX`_.
 The table below shows the types of problems the solvers can handle.
 
 +--------------+----+------+-----+-----+-----+
@@ -231,6 +231,8 @@ The table below shows the types of problems the solvers can handle.
 | `CVXOPT`_    | X  | X    | X   | X   |     |
 +--------------+----+------+-----+-----+-----+
 | `SCS`_       | X  | X    | X   | X   |     |
++--------------+----+------+-----+-----+-----+
+| `CPLEX`_     | X  | X    |     |     | X   |
 +--------------+----+------+-----+-----+-----+
 
 A special solver LS is also available. It is unable to solve any of the problem types in the table above, but it recognizes and solves linearly constrained least squares problems very quickly.
@@ -297,6 +299,9 @@ You can change the solver called by CVXPY using the ``solver`` keyword argument.
     prob.solve(solver=CBC)
     print "optimal value with CBC:", prob.value
 
+    # Solve with CPLEX.
+    prob.solve(solver=CPLEX)
+    print "optimal value with CPLEX:", prob.value
 ::
 
     optimal value with ECOS: 5.99999999551
@@ -310,6 +315,7 @@ You can change the solver called by CVXPY using the ``solver`` keyword argument.
     optimal value with XPRESS: 6.0
     optimal value with Elemental: 6.0000044085242727
     optimal value with CBC: 6.0
+    optimal value with CPLEX: 6.0
 
 Use the ``installed_solvers`` utility function to get a list of the solvers your installation of CVXPY supports.
 
@@ -319,7 +325,7 @@ Use the ``installed_solvers`` utility function to get a list of the solvers your
 
 ::
 
-    ['CBC', 'CVXOPT', 'MOSEK', 'GLPK', 'GLPK_MI', 'ECOS_BB', 'ECOS', 'SCS', 'GUROBI', 'XPRESS', 'ELEMENTAL', 'LS']
+    ['CBC', 'CVXOPT', 'MOSEK', 'GLPK', 'GLPK_MI', 'ECOS_BB', 'ECOS', 'SCS', 'GUROBI', 'XPRESS', 'ELEMENTAL', 'LS', 'CPLEX']
 
 Viewing solver output
 ^^^^^^^^^^^^^^^^^^^^^
@@ -500,6 +506,14 @@ The following cut-generators are available:
 ``'CutGenName'``
     if cut-generator is activated (e.g. ``'GomoryCuts=True'``)
 
+`CPLEX`_ options:
+
+``'cplex_params'``
+    a dictionary where the key-value pairs are composed of parameter numbers and parameter values.
+
+``'cplex_filename'``
+    a string specifying the filename to which the problem will be written.
+
 Getting the standard form
 -------------------------
 
@@ -545,3 +559,4 @@ For example, the following code is equivalent to solving the problem directly wi
 .. _Elemental: http://libelemental.org/
 .. _CBC: https://projects.coin-or.org/Cbc
 .. _CGL: https://projects.coin-or.org/Cgl
+.. _CPLEX: https://www.ibm.com/products/ilog-cplex-optimization-studio
