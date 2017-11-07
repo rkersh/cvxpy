@@ -1,6 +1,7 @@
 from cvxpy import *
 from cvxpy.tests.base_test import BaseTest
 import numpy as np
+import unittest
 
 
 class TestSolvers(BaseTest):
@@ -183,6 +184,63 @@ class TestSolvers(BaseTest):
                 prob = Problem(Minimize(norm(self.x, 1)), [self.x == 0])
                 prob.solve(solver=GLPK_MI)
             self.assertEqual(str(cm.exception), "The solver %s is not installed." % GLPK_MI)
+
+    def test_cplex(self):
+        """Test a basic LP with CPLEX.
+        """
+        if CPLEX in installed_solvers():
+            prob = Problem(Minimize(norm(self.x, 1)), [self.x == 0])
+            prob.solve(solver=CPLEX)
+            self.assertItemsAlmostEqual(self.x.value, [0, 0])
+
+            # Example from http://cvxopt.org/userguide/coneprog.html?highlight=solvers.lp#cvxopt.solvers.lp
+            objective = Minimize(-4 * self.x[0] - 5 * self.x[1])
+            constraints = [2 * self.x[0] + self.x[1] <= 3,
+                           self.x[0] + 2 * self.x[1] <= 3,
+                           self.x[0] >= 0,
+                           self.x[1] >= 0]
+            prob = Problem(objective, constraints)
+            prob.solve(solver=CPLEX)
+            self.assertAlmostEqual(prob.value, -9)
+            self.assertItemsAlmostEqual(self.x.value, [1, 1])
+
+            # CPLEX's default lower bound for a decision variable is zero
+            # This quick test ensures that the cvxpy interface for CPLEX does *not* have that bound
+            objective = Minimize(self.x[0])
+            constraints = [self.x[0] >= -100, self.x[0] <= -10, self.x[1] == 1]
+            prob = Problem(objective, constraints)
+            prob.solve(solver=CPLEX)
+            self.assertItemsAlmostEqual(self.x.value, [-100, 1])
+
+            # Boolean and integer version.
+            bool_var = Bool()
+            int_var = Int()
+            prob = Problem(Minimize(norm(self.x, 1)),
+                           [self.x == bool_var, bool_var == 0])
+            prob.solve(solver=CPLEX)
+            self.assertAlmostEqual(prob.value, 0)
+            self.assertAlmostEqual(bool_var.value, 0)
+            self.assertItemsAlmostEqual(self.x.value, [0, 0])
+
+            # Example from http://cvxopt.org/userguide/coneprog.html?highlight=solvers.lp#cvxopt.solvers.lp
+            objective = Minimize(-4 * self.x[0] - 5 * self.x[1])
+            constraints = [2 * self.x[0] + self.x[1] <= int_var,
+                           self.x[0] + 2 * self.x[1] <= 3*bool_var,
+                           self.x[0] >= 0,
+                           self.x[1] >= 0,
+                           int_var == 3*bool_var,
+                           int_var == 3]
+            prob = Problem(objective, constraints)
+            prob.solve(solver=CPLEX)
+            self.assertAlmostEqual(prob.value, -9)
+            self.assertAlmostEqual(int_var.value, 3)
+            self.assertAlmostEqual(bool_var.value, 1)
+            self.assertItemsAlmostEqual(self.x.value, [1, 1])
+        else:
+            with self.assertRaises(Exception) as cm:
+                prob = Problem(Minimize(norm(self.x, 1)), [self.x == 0])
+                prob.solve(solver=CPLEX)
+            self.assertEqual(str(cm.exception), "The solver %s is not installed." % CPLEX)
 
     def test_gurobi(self):
         """Test a basic LP with Gurobi.
@@ -669,3 +727,7 @@ class TestSolvers(BaseTest):
                 with self.assertRaises(Exception) as cm:
                     prob.solve(solver=solver)
                 self.assertEqual(str(cm.exception), "The solver %s is not installed." % solver)
+
+
+if __name__ == "__main__":
+    unittest.main()
