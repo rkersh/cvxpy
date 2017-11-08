@@ -22,6 +22,11 @@ from cvxpy.problems.solvers.solver import Solver
 from scipy.sparse import dok_matrix
 
 
+def _select_row(tuple_list, item):
+    """Select all tuples from the list where first == item."""
+    return [(row, col) for row, col in tuple_list if row == item]
+
+
 class CPLEX(Solver):
     """An interface for the CPLEX solver.
     """
@@ -44,6 +49,7 @@ class CPLEX(Solver):
     # RPK: Map stati for OPTIMAL_INACCURATE, INFEASIBLE_INACCURATE,
     #      UNBOUNDED_INACCURATE
     STATUS_MAP_MIP = {101: s.OPTIMAL,  # CPXMIP_OPTIMAL
+                      102: s.OPTIMAL,  # CPXMIP_OPTIMAL_TOL
                       103: s.INFEASIBLE,  # CPXMIP_INFEASIBLE
                       118: s.UNBOUNDED,  # CPXMIP_UNBOUNDED
                       }
@@ -315,7 +321,7 @@ class CPLEX(Solver):
             The rows to be constrained.
         ctype : CPLEX constraint type
             The type of constraint.
-        nonzero_locs : CPLEX tuplelist # RPK: ?
+        nonzero_locs : list of tuples
             A list of all the nonzero locations.
         mat : SciPy COO matrix
             The matrix representing the constraints.
@@ -331,11 +337,12 @@ class CPLEX(Solver):
         constr = []
         for i in rows:
             ind, val = [], []
-            for row, col in [(r, c) for r, c in nonzero_locs if r == i]:
+            for row, col in _select_row(nonzero_locs, i):
                 ind.append(variables[col])
                 val.append(mat[(row, col)])
             # Ignore empty constraints.
             if len(ind) > 0:
+                # RPK: Would be faster if added in a batch.
                 constr.extend(list(
                     model.linear_constraints.add(
                         lin_expr=[cplex.SparsePair(ind=ind, val=val)],
@@ -351,13 +358,13 @@ class CPLEX(Solver):
 
         Parameters
         ----------
-        model : GUROBI model
+        model : CPLEX model
             The problem model.
         variables : list
             The problem variables.
         rows : range
             The rows to be constrained.
-        nonzero_locs : GUROBI tuplelist
+        nonzero_locs : list of tuples
             A list of all the nonzero locations.
         mat : SciPy COO matrix
             The matrix representing the constraints.
@@ -369,48 +376,64 @@ class CPLEX(Solver):
         tuple
             A tuple of (QConstr, list of Constr, and list of variables).
         """
-        import gurobipy
+        import cplex
         # Assume first expression (i.e. t) is nonzero.
         lin_expr_list = []
         soc_vars = []
         for i in rows:
-            expr_list = []
-            for loc in nonzero_locs.select(i, "*"):
-                expr_list.append((mat[loc], variables[loc[1]]))
+            ind, val = [], []
+            for row, col in _select_row(nonzero_locs, i):
+                ind.append(variables[col])
+                val.append(mat[(row, col)])
             # Ignore empty constraints.
-            lin_expr_list.append(vec[i] - gurobipy.LinExpr(expr_list))
+            if len(ind) > 0:
+                lin_expr_list.append((ind, val))
+            else:
+                lin_expr_list.append(None)
 
         # Make a variable and equality constraint for each term.
-        soc_vars = [
-            model.addVar(
-                obj=0,
-                name="soc_t_%d" % rows[0],
-                vtype=gurobipy.GRB.CONTINUOUS,
-                lb=0,
-                ub=gurobipy.GRB.INFINITY)
-        ]
-        for i in rows[1:]:
-            soc_vars += [
-                model.addVar(
-                    obj=0,
-                    name="soc_x_%d" % i,
-                    vtype=gurobipy.GRB.CONTINUOUS,
-                    lb=-gurobipy.GRB.INFINITY,
-                    ub=gurobipy.GRB.INFINITY)
-            ]
-        model.update()
+        soc_vars, is_first = [], True
+        for i in rows:
+            if is_first:
+                lb = [0.0]
+                names = ["soc_t_%d" % i]
+                is_first = False
+            else:
+                lb = [-cplex.infinity]
+                names = ["soc_x_%d" % i]
+            soc_vars.extend(list(model.variables.add(
+                obj=[0],
+                lb=lb,
+                ub=[cplex.infinity],
+                types="",
+                names=names)))
 
         new_lin_constrs = []
-        for i, _ in enumerate(lin_expr_list):
-            new_lin_constrs += [
-                model.addConstr(soc_vars[i] == lin_expr_list[i])
-            ]
+        for i, expr in enumerate(lin_expr_list):
+            if expr is None:
+                ind = [soc_vars[i]]
+                val = [1.0]
+            else:
+                ind, val = expr
+                ind.append(soc_vars[i])
+                val.append(1.0)
+            new_lin_constrs.extend(list(
+                model.linear_constraints.add(
+                    lin_expr=[cplex.SparsePair(ind=ind, val=val)],
+                    senses="E",
+                    rhs=[-vec[i]])))
 
-        t_term = soc_vars[0]*soc_vars[0]
-        x_term = gurobipy.quicksum([var*var for var in soc_vars[1:]])
-        return (model.addQConstr(x_term <= t_term),
-                new_lin_constrs,
-                soc_vars)
+        assert len(soc_vars) > 0
+        qconstr = model.quadratic_constraints.add(
+            lin_expr=cplex.SparsePair(ind=[], val=[]),
+            quad_expr=cplex.SparseTriple(
+                ind1=soc_vars,
+                ind2=soc_vars,
+                val=[-1.0] + [1.0] * (len(soc_vars) - 1)),
+            sense="L",
+            rhs=0.0,
+            name="")
+        return (qconstr, new_lin_constrs, soc_vars)
 
     def format_results(self, results_dict, data, cached_data):
         """Converts the solver output into standard form.
