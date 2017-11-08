@@ -301,6 +301,37 @@ class TestSolvers(BaseTest):
                 prob.solve(solver=CPLEX)
             self.assertEqual(str(cm.exception), "The solver %s is not installed." % CPLEX)
 
+    def test_cplex_dual(self):
+        """Make sure CPLEX's dual result matches other solvers
+        """
+        if CPLEX in installed_solvers():
+            constraints = [self.x == 0]
+            prob = Problem(Minimize(norm(self.x, 1)))
+            prob.solve(solver=CPLEX)
+            duals_cplex = [x.dual_value for x in constraints]
+            prob.solve(solver=ECOS)
+            duals_ecos = [x.dual_value for x in constraints]
+            self.assertItemsAlmostEqual(duals_cplex, duals_ecos)
+
+            # Example from http://cvxopt.org/userguide/coneprog.html?highlight=solvers.lp#cvxopt.solvers.lp
+            objective = Minimize(-4 * self.x[0] - 5 * self.x[1])
+            constraints = [2 * self.x[0] + self.x[1] <= 3,
+                           self.x[0] + 2 * self.x[1] <= 3,
+                           self.x[0] >= 0,
+                           self.x[1] >= 0]
+            prob = Problem(objective, constraints)
+            prob.solve(solver=CPLEX)
+            duals_cplex = [x.dual_value for x in constraints]
+            prob.solve(solver=ECOS)
+            duals_ecos = [x.dual_value for x in constraints]
+            self.assertItemsAlmostEqual(duals_cplex, duals_ecos)
+
+        else:
+            with self.assertRaises(Exception) as cm:
+                prob = Problem(Minimize(norm(self.x, 1)), [self.x == 0])
+                prob.solve(solver=CPLEX)
+            self.assertEqual(str(cm.exception), "The solver %s is not installed." % CPLEX)
+
     def test_gurobi(self):
         """Test a basic LP with Gurobi.
         """
