@@ -277,9 +277,18 @@ class CPLEX(Solver):
         # TODO user option to not compute duals.
         # model.setParam("QCPDual", True)  # RPK: ?
 
-        for key, value in solver_opts.items():
-            # model.setParam(key, value)  # RPK: ?
-            pass  # RPK: ?
+        # RPK: Parameter support is functional, but not very convenient.
+        #      The user must pass parameters using the numeric ID, and
+        #      raw values (i.e., no enum support). We also use an internal
+        #      function here to set the parameters (not the best). Another
+        #      option would be to use reflection (i.e., getattr).
+        kwargs = sorted(solver_opts.keys())
+        if "cplex_params" in kwargs:
+            for key, value in solver_opts["cplex_params"].items():
+                model.parameters._set(key, value)
+            kwargs.remove("cplex_params")
+        if kwargs:
+            raise ValueError("invalid keyword-argument '{0}'".format(kwargs[0]))
 
         results_dict = {}
         start_time = model.get_time()

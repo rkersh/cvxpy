@@ -399,6 +399,45 @@ class TestSolvers(BaseTest):
                 prob.solve(solver=CPLEX, warm_start=True)
             self.assertEqual(str(cm.exception), "The solver %s is not installed." % CPLEX)
 
+    def test_cplex_params(self):
+        if CPLEX in installed_solvers():
+            import numpy as np
+            import numpy.random as rnd
+            import cplex
+            from cplex.exceptions import CplexError
+
+            n = 10
+            m = 4
+            A = rnd.randn(m, n)
+            x = rnd.randn(n)
+            y = A.dot(x)
+
+            # Solve a simple basis pursuit problem for testing purposes.
+            z = Variable(n)
+            objective = Minimize(norm1(z))
+            constraints = [A * z == y[:, np.newaxis]]
+            problem = Problem(objective, constraints)
+
+            CPX_PARAM_BOGUS = -1
+            invalid_cplex_params = {
+                CPX_PARAM_BOGUS: "FOO"
+            }
+            with self.assertRaises(CplexError):
+                problem.solve(solver=CPLEX, cplex_params=invalid_cplex_params)
+
+            with self.assertRaises(ValueError):
+                problem.solve(solver=CPLEX, invalid_kwarg=None)
+
+            CPX_PARAM_DATACHECK = 1056
+            CPX_PARAM_EPAGAP = 2008
+            CPX_PARAM_WORKDIR = 1064
+            cplex_params = {
+                CPX_PARAM_DATACHECK: 2,
+                CPX_PARAM_EPAGAP: 1e-06,
+                CPX_PARAM_WORKDIR: ".",
+            }
+            problem.solve(solver=CPLEX, cplex_params=cplex_params)
+
     def test_gurobi(self):
         """Test a basic LP with Gurobi.
         """
