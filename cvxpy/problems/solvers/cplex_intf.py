@@ -156,7 +156,7 @@ class CPLEX(Solver):
                 I_unique = list(set(np.where(c_diff)[0]))
 
                 for i in I_unique:
-                    variables[i].Obj = c[i]
+                    model.objective.set_linear(variables[i], c[i])
             else:
                 # Stay consistent with CPLEX's representation of the problem
                 c = c_prev
@@ -186,22 +186,34 @@ class CPLEX(Solver):
 
                     # Remove old constraint if it exists
                     if cpx_constrs[i] is not None:
-                        #model.linear_constraints.delete(  # RPK: ?
-                        model.remove(cpx_constrs[i])
+                        # Disable the old constraint by setting all
+                        # coefficients and rhs to zero. This way we don't
+                        # have to worry about indices needing to shift.
+                        # RPK: Correct?
+                        tmp = model.linear_constraints.get_rows(cpx_constrs[i])
+                        model.linear_constraints.set_linear_components(
+                            cpx_constrs[i],
+                            cplex.SparsePair(ind=tmp.ind, val=[0.0]*len(tmp.ind)))
+                        model.linear_constraints.set_rhs(cpx_constrs[i], 0.0)
                         cpx_constrs[i] = None
 
                     # Add new constraint
-                    if len(nonzero_locs.select(i, "*")) > 0:
-                        expr_list = []
-                        for loc in nonzero_locs.select(i, "*"):
-                            expr_list.append((A[loc], variables[loc[1]]))
-                        expr = gurobipy.LinExpr(expr_list)
+                    nonzero_loc = _select_row(nonzero_locs, i)
+                    if nonzero_loc:
+                        ind, val = [], []
+                        for row, col in nonzero_loc:
+                            ind.append(variables[col])
+                            val.append(A[(row, col)])
                         if i < data[s.DIMS][s.EQ_DIM]:
-                            ctype = gurobipy.GRB.EQUAL
-                        elif data[s.DIMS][s.EQ_DIM] <= i \
-                                < data[s.DIMS][s.EQ_DIM] + data[s.DIMS][s.LEQ_DIM]:
-                            ctype = gurobipy.GRB.LESS_EQUAL
-                        cpx_constrs[i] = model.addConstr(expr, ctype, b[i])
+                            ctype = "E"
+                        else:
+                            assert data[s.DIMS][s.EQ_DIM] <= i \
+                                < data[s.DIMS][s.EQ_DIM] + data[s.DIMS][s.LEQ_DIM]
+                            ctype = "L"
+                        cpx_constrs[i] = list(model.linear_constraints.add(
+                            lin_expr=[cplex.SparsePair(ind=ind, val=val)],
+                            senses=ctype,
+                            rhs=[b[i]]))[0]
 
             else:
                 # Stay consistent with CPLEX's representation of the problem
@@ -284,10 +296,9 @@ class CPLEX(Solver):
             else:
                 # Only add duals if not a MIP.
                 vals = []
-                if len(eq_constrs) > 0:
-                    vals.extend(model.solution.get_dual_values(eq_constrs))
-                if len(ineq_constrs) > 0:
-                    vals.extend(model.solution.get_dual_values(ineq_constrs))
+                if len(cpx_constrs) > 0:
+                    vals.extend(model.solution.get_dual_values(
+                        [c for c in cpx_constrs if c is not None]))
                 # RPK: FIXME (use method in qcpdual.py to calculate qcp duals)
                 #vals.extend(for soc_constr)
                 #vals.extend(for new_leq_constr)

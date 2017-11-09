@@ -332,6 +332,73 @@ class TestSolvers(BaseTest):
                 prob.solve(solver=CPLEX)
             self.assertEqual(str(cm.exception), "The solver %s is not installed." % CPLEX)
 
+    def test_cplex_warm_start(self):
+        """Make sure that warm starting CPLEX behaves as expected
+           Note: This only checks output, not whether or not CPLEX is warm starting internally
+        """
+        if CPLEX in installed_solvers():
+            import numpy as np
+
+            A = Parameter(2, 2)
+            b = Parameter(2)
+            h = Parameter(2)
+            c = Parameter(2)
+
+            A.value = np.matrix([[1, 0], [0, 0]])
+            b.value = np.array([1, 0])
+            h.value = np.array([2, 2])
+            c.value = np.array([1, 1])
+
+            objective = Maximize(c[0] * self.x[0] + c[1] * self.x[1])
+            constraints = [self.x[0] <= h[0],
+                           self.x[1] <= h[1],
+                           A * self.x == b]
+            prob = Problem(objective, constraints)
+            result = prob.solve(solver=CPLEX, warm_start=True)
+            self.assertEqual(result, 3)
+            self.assertItemsAlmostEqual(self.x.value, [1, 2])
+            orig_objective = result
+            orig_x = self.x.value
+
+            # Change A and b from the original values
+            A.value = np.matrix([[0, 0], [0, 1]])   # <----- Changed
+            b.value = np.array([0, 1])              # <----- Changed
+            h.value = np.array([2, 2])
+            c.value = np.array([1, 1])
+
+            # Without setting update_eq_constrs = False, the results should change to the correct answer
+            result = prob.solve(solver=CPLEX, warm_start=True)
+            self.assertEqual(result, 3)
+            self.assertItemsAlmostEqual(self.x.value, [2, 1])
+
+            # Change h from the original values
+            A.value = np.matrix([[1, 0], [0, 0]])
+            b.value = np.array([1, 0])
+            h.value = np.array([1, 1])              # <----- Changed
+            c.value = np.array([1, 1])
+
+            # Without setting update_ineq_constrs = False, the results should change to the correct answer
+            result = prob.solve(solver=CPLEX, warm_start=True)
+            self.assertEqual(result, 2)
+            self.assertItemsAlmostEqual(self.x.value, [1, 1])
+
+            # Change c from the original values
+            A.value = np.matrix([[1, 0], [0, 0]])
+            b.value = np.array([1, 0])
+            h.value = np.array([2, 2])
+            c.value = np.array([2, 1])              # <----- Changed
+
+            # Without setting update_objective = False, the results should change to the correct answer
+            result = prob.solve(solver=CPLEX, warm_start=True)
+            self.assertEqual(result, 4)
+            self.assertItemsAlmostEqual(self.x.value, [1, 2])
+
+        else:
+            with self.assertRaises(Exception) as cm:
+                prob = Problem(Minimize(norm(self.x, 1)), [self.x == 0])
+                prob.solve(solver=CPLEX, warm_start=True)
+            self.assertEqual(str(cm.exception), "The solver %s is not installed." % CPLEX)
+
     def test_gurobi(self):
         """Test a basic LP with Gurobi.
         """
