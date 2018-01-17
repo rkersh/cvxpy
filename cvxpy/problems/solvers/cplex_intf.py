@@ -272,8 +272,16 @@ class CPLEX(Solver):
             cpx_constrs = eq_constrs + ineq_constrs + \
                 soc_constrs + new_leq_constrs
 
-        # Set verbosity and other parameters
-        # model.setParam("OutputFlag", verbose)  # RPK: ?
+        # Set verbosity
+        if not verbose:
+            model.set_results_stream(None)
+            model.set_warning_stream(None)
+            model.set_error_stream(None)
+            model.set_log_stream(None)
+        else:
+            # By default the output will be sent to stdout.
+            pass
+
         # TODO user option to not compute duals.
         # model.setParam("QCPDual", True)  # RPK: ?
 
