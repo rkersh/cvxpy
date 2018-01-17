@@ -20,6 +20,7 @@ import cvxpy.interface as intf
 import numpy as np
 from cvxpy.tests.base_test import BaseTest
 import numbers
+import unittest
 
 
 class TestExamples(BaseTest):
@@ -268,7 +269,7 @@ class TestExamples(BaseTest):
         print(a.value)
         print(b.value)
 
-    def test_advanced(self):
+    def test_advanced1(self):
         """Code from the advanced tutorial.
         """
         # Solving a problem with different solvers.
@@ -297,6 +298,12 @@ class TestExamples(BaseTest):
         prob.solve(solver=SCS)
         print("optimal value with SCS:", prob.value)
         self.assertAlmostEqual(prob.value, 6, places=2)
+
+        if CPLEX in installed_solvers():
+            # Solve with CPLEX.
+            prob.solve(solver=CPLEX)
+            print("optimal value with CPLEX:", prob.value)
+            self.assertAlmostEqual(prob.value, 6)
 
         if GLPK in installed_solvers():
             # Solve with GLPK.
@@ -610,7 +617,7 @@ class TestExamples(BaseTest):
         prob = Problem(obj, constraints)
         prob.solve(solver=SCS)
 
-    def test_advanced(self):
+    def test_advanced2(self):
         """Test code from the advanced section of the tutorial.
         """
         x = Variable()
@@ -689,3 +696,6 @@ class TestExamples(BaseTest):
     #     risks = [ sqrt(dot(x, S*x)) for x in xs ]
 
     #     # QP solver
+
+if __name__ == '__main__':
+    unittest.main()
