@@ -281,20 +281,19 @@ class TestSolvers(BaseTest):
             self.assertItemsAlmostEqual(self.x.value, [0, 0])
 
             # Example from http://cvxopt.org/userguide/coneprog.html?highlight=solvers.lp#cvxopt.solvers.lp
-            # RPK: FIXME
-            # objective = Minimize(-4 * self.x[0] - 5 * self.x[1])
-            # constraints = [2 * self.x[0] + self.x[1] <= int_var,
-            #                (self.x[0] + 2 * self.x[1])**2 <= 9*bool_var,
-            #                self.x[0] >= 0,
-            #                self.x[1] >= 0,
-            #                int_var == 3*bool_var,
-            #                int_var == 3]
-            # prob = Problem(objective, constraints)
-            # prob.solve(solver=CPLEX)
-            # self.assertAlmostEqual(prob.value, -9)
-            # self.assertAlmostEqual(int_var.value, 3)
-            # self.assertAlmostEqual(bool_var.value, 1)
-            # self.assertItemsAlmostEqual(self.x.value, [1, 1])
+            objective = Minimize(-4 * self.x[0] - 5 * self.x[1])
+            constraints = [2 * self.x[0] + self.x[1] <= int_var,
+                           (self.x[0] + 2 * self.x[1])**2 <= 9*bool_var,
+                           self.x[0] >= 0,
+                           self.x[1] >= 0,
+                           int_var == 3*bool_var,
+                           int_var == 3]
+            prob = Problem(objective, constraints)
+            prob.solve(solver=CPLEX)
+            self.assertAlmostEqual(prob.value, -9)
+            self.assertAlmostEqual(int_var.value, 3)
+            self.assertAlmostEqual(bool_var.value, 1)
+            self.assertItemsAlmostEqual(self.x.value, [1, 1])
         else:
             with self.assertRaises(Exception) as cm:
                 prob = Problem(Minimize(norm(self.x, 1)), [self.x == 0])

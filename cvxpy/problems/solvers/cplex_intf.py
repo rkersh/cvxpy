@@ -400,6 +400,7 @@ class CPLEX(Solver):
         # Assume first expression (i.e. t) is nonzero.
         lin_expr_list = []
         soc_vars = []
+        lin_rhs = []
         for i in rows:
             ind, val = [], []
             for row, col in _select_row(nonzero_locs, i):
@@ -408,8 +409,10 @@ class CPLEX(Solver):
             # Ignore empty constraints.
             if len(ind) > 0:
                 lin_expr_list.append((ind, val))
+                lin_rhs.append(vec[i])
             else:
                 lin_expr_list.append(None)
+                lin_rhs.append(0.0)
 
         # Make a variable and equality constraint for each term.
         soc_vars, is_first = [], True
@@ -441,7 +444,7 @@ class CPLEX(Solver):
                 model.linear_constraints.add(
                     lin_expr=[cplex.SparsePair(ind=ind, val=val)],
                     senses="E",
-                    rhs=[-vec[i]])))
+                    rhs=[lin_rhs[i]])))
 
         assert len(soc_vars) > 0
         qconstr = model.quadratic_constraints.add(
