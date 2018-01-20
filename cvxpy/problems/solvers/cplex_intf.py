@@ -118,6 +118,11 @@ class CPLEX(Solver):
             Should the solver print output?
         solver_opts : dict
             Additional arguments for the solver.
+            'cplex_params' - a dictionary where the key-value pairs are
+                             composed of parameter numbers and parameter
+                             values.
+            'cplex_filename' - A string specifying the filename to which
+                               the problem will be written.
 
         Returns
         -------
@@ -289,6 +294,11 @@ class CPLEX(Solver):
             for key, value in solver_opts["cplex_params"].items():
                 model.parameters._set(key, value)
             kwargs.remove("cplex_params")
+        if "cplex_filename" in kwargs:
+            filename = solver_opts["cplex_filename"]
+            if filename:
+                model.write(filename)
+            kwargs.remove("cplex_filename")
         if kwargs:
             raise ValueError("invalid keyword-argument '{0}'".format(kwargs[0]))
 
