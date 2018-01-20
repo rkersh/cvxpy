@@ -178,9 +178,6 @@ class CPLEX(Solver):
                     I = []
                 I_unique = list(set(I) | set(np.where(b_diff)[0]))
 
-                # RPK: Use a different data structure?
-                nonzero_locs = [x for x in A.keys()]
-
                 # Update locations which have changed
                 for i in I_unique:
 
@@ -198,7 +195,7 @@ class CPLEX(Solver):
                         cpx_constrs[i] = None
 
                     # Add new constraint
-                    nonzero_loc = _select_row(nonzero_locs, i)
+                    nonzero_loc = _select_row(A.keys(), i)
                     if nonzero_loc:
                         ind, val = [], []
                         for row, col in nonzero_loc:
@@ -246,24 +243,21 @@ class CPLEX(Solver):
                 types="".join(vtype),
                 names=["x_%d" % i for i in range(n)]))
 
-            nonzero_locs = [x for x in A.keys()]  # RPK: Different data structure?
             eq_constrs = self.add_model_lin_constr(model, variables,
                                                    range(data[s.DIMS][s.EQ_DIM]),
-                                                   'E', nonzero_locs, A, b)
+                                                   'E', A, b)
             leq_start = data[s.DIMS][s.EQ_DIM]
             leq_end = data[s.DIMS][s.EQ_DIM] + data[s.DIMS][s.LEQ_DIM]
             ineq_constrs = self.add_model_lin_constr(model, variables,
                                                      range(leq_start, leq_end),
-                                                     'L', nonzero_locs, A, b)
+                                                     'L', A, b)
             soc_start = leq_end
             soc_constrs = []
             new_leq_constrs = []
             for constr_len in data[s.DIMS][s.SOC_DIM]:
                 soc_end = soc_start + constr_len
                 soc_constr, new_leq, new_vars = self.add_model_soc_constr(
-                    model, variables, range(soc_start, soc_end),
-                    nonzero_locs, A, b
-                )
+                    model, variables, range(soc_start, soc_end), A, b)
                 soc_constrs.append(soc_constr)
                 new_leq_constrs += new_leq
                 variables += new_vars
@@ -335,8 +329,7 @@ class CPLEX(Solver):
         return self.format_results(results_dict, data, cached_data)
 
     def add_model_lin_constr(self, model, variables,
-                             rows, ctype,
-                             nonzero_locs, mat, vec):
+                             rows, ctype, mat, vec):
         """Adds EQ/LEQ constraints to the model using the data from mat and vec.
 
         Parameters
@@ -349,8 +342,6 @@ class CPLEX(Solver):
             The rows to be constrained.
         ctype : CPLEX constraint type
             The type of constraint.
-        nonzero_locs : list of tuples
-            A list of all the nonzero locations.
         mat : SciPy COO matrix
             The matrix representing the constraints.
         vec : NDArray
@@ -365,12 +356,12 @@ class CPLEX(Solver):
         constr = []
         for i in rows:
             ind, val = [], []
-            for row, col in _select_row(nonzero_locs, i):
+            for row, col in _select_row(mat.keys(), i):
                 ind.append(variables[col])
-                val.append(mat[(row, col)])
+                val.append(mat[row, col])
             # Ignore empty constraints.
-            if len(ind) > 0:
-                # RPK: Would be faster if added in a batch.
+            if ind:
+                # TODO: Would be faster if added in batches.
                 constr.extend(list(
                     model.linear_constraints.add(
                         lin_expr=[cplex.SparsePair(ind=ind, val=val)],
@@ -381,7 +372,7 @@ class CPLEX(Solver):
         return constr
 
     def add_model_soc_constr(self, model, variables,
-                             rows, nonzero_locs, mat, vec):
+                             rows, mat, vec):
         """Adds SOC constraint to the model using the data from mat and vec.
 
         Parameters
@@ -392,8 +383,6 @@ class CPLEX(Solver):
             The problem variables.
         rows : range
             The rows to be constrained.
-        nonzero_locs : list of tuples
-            A list of all the nonzero locations.
         mat : SciPy COO matrix
             The matrix representing the constraints.
         vec : NDArray
@@ -411,11 +400,11 @@ class CPLEX(Solver):
         lin_rhs = []
         for i in rows:
             ind, val = [], []
-            for row, col in _select_row(nonzero_locs, i):
+            for row, col in _select_row(mat.keys(), i):
                 ind.append(variables[col])
                 val.append(mat[(row, col)])
             # Ignore empty constraints.
-            if len(ind) > 0:
+            if ind:
                 lin_expr_list.append((ind, val))
                 lin_rhs.append(vec[i])
             else:
