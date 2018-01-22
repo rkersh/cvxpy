@@ -38,22 +38,6 @@ class CPLEX(Solver):
     EXP_CAPABLE = False
     MIP_CAPABLE = True
 
-    # Map of CPLEX status to CVXPY status.
-    # RPK: Map stati for OPTIMAL_INACCURATE, INFEASIBLE_INACCURATE,
-    #      UNBOUNDED_INACCURATE
-    STATUS_MAP_LP = {1: s.OPTIMAL,  # CPX_STAT_OPTIMAL
-                     2: s.UNBOUNDED,  # CPX_STAT_UNBOUNDED
-                     3: s.INFEASIBLE,  # CPX_STAT_INFEASIBLE
-                     }
-
-    # RPK: Map stati for OPTIMAL_INACCURATE, INFEASIBLE_INACCURATE,
-    #      UNBOUNDED_INACCURATE
-    STATUS_MAP_MIP = {101: s.OPTIMAL,  # CPXMIP_OPTIMAL
-                      102: s.OPTIMAL,  # CPXMIP_OPTIMAL_TOL
-                      103: s.INFEASIBLE,  # CPXMIP_INFEASIBLE
-                      118: s.UNBOUNDED,  # CPXMIP_UNBOUNDED
-                      }
-
     def name(self):
         """The name of the solver.
         """
@@ -118,6 +102,11 @@ class CPLEX(Solver):
             Should the solver print output?
         solver_opts : dict
             Additional arguments for the solver.
+            'cplex_params' - a dictionary where the key-value pairs are
+                             composed of parameter numbers and parameter
+                             values.
+            'cplex_filename' - A string specifying the filename to which
+                               the problem will be written.
 
         Returns
         -------
@@ -178,9 +167,6 @@ class CPLEX(Solver):
                     I = []
                 I_unique = list(set(I) | set(np.where(b_diff)[0]))
 
-                # RPK: Use a different data structure?
-                nonzero_locs = [x for x in A.keys()]
-
                 # Update locations which have changed
                 for i in I_unique:
 
@@ -198,7 +184,7 @@ class CPLEX(Solver):
                         cpx_constrs[i] = None
 
                     # Add new constraint
-                    nonzero_loc = _select_row(nonzero_locs, i)
+                    nonzero_loc = _select_row(A.keys(), i)
                     if nonzero_loc:
                         ind, val = [], []
                         for row, col in nonzero_loc:
@@ -246,24 +232,21 @@ class CPLEX(Solver):
                 types="".join(vtype),
                 names=["x_%d" % i for i in range(n)]))
 
-            nonzero_locs = [x for x in A.keys()]  # RPK: Different data structure?
             eq_constrs = self.add_model_lin_constr(model, variables,
                                                    range(data[s.DIMS][s.EQ_DIM]),
-                                                   'E', nonzero_locs, A, b)
+                                                   'E', A, b)
             leq_start = data[s.DIMS][s.EQ_DIM]
             leq_end = data[s.DIMS][s.EQ_DIM] + data[s.DIMS][s.LEQ_DIM]
             ineq_constrs = self.add_model_lin_constr(model, variables,
                                                      range(leq_start, leq_end),
-                                                     'L', nonzero_locs, A, b)
+                                                     'L', A, b)
             soc_start = leq_end
             soc_constrs = []
             new_leq_constrs = []
             for constr_len in data[s.DIMS][s.SOC_DIM]:
                 soc_end = soc_start + constr_len
                 soc_constr, new_leq, new_vars = self.add_model_soc_constr(
-                    model, variables, range(soc_start, soc_end),
-                    nonzero_locs, A, b
-                )
+                    model, variables, range(soc_start, soc_end), A, b)
                 soc_constrs.append(soc_constr)
                 new_leq_constrs += new_leq
                 variables += new_vars
@@ -295,6 +278,11 @@ class CPLEX(Solver):
             for key, value in solver_opts["cplex_params"].items():
                 model.parameters._set(key, value)
             kwargs.remove("cplex_params")
+        if "cplex_filename" in kwargs:
+            filename = solver_opts["cplex_filename"]
+            if filename:
+                model.write(filename)
+            kwargs.remove("cplex_filename")
         if kwargs:
             raise ValueError("invalid keyword-argument '{0}'".format(kwargs[0]))
 
@@ -306,10 +294,10 @@ class CPLEX(Solver):
             solve_time = model.get_time() - start_time
             results_dict["primal objective"] = model.solution.get_objective_value()
             results_dict["x"] = np.array(model.solution.get_values(variables))
+            results_dict["status"] = self._get_status(model)
 
             if self.is_mip(data):
-                results_dict["status"] = self.STATUS_MAP_MIP.get(
-                    model.solution.get_status(), s.SOLVER_ERROR)
+                pass
             else:
                 # Only add duals if not a MIP.
                 vals = []
@@ -320,8 +308,6 @@ class CPLEX(Solver):
                 #vals.extend(for soc_constr)
                 #vals.extend(for new_leq_constr)
                 results_dict["y"] = -np.array(vals)
-                results_dict["status"] = self.STATUS_MAP_LP.get(
-                    model.solution.get_status(), s.SOLVER_ERROR)
         except:
             if solve_time < 0.0:
                 solve_time = model.get_time() - start_time
@@ -334,9 +320,118 @@ class CPLEX(Solver):
 
         return self.format_results(results_dict, data, cached_data)
 
+    def _handle_solve_status(self, model, solstat):
+        """Map CPLEX MIP solution status codes to non-MIP status codes."""
+        status = model.solution.status
+        if solstat == status.MIP_optimal:
+            return status.optimal
+        elif solstat == status.MIP_infeasible:
+            return status.infeasible
+        elif solstat in (status.MIP_time_limit_feasible,
+                         status.MIP_time_limit_infeasible):
+            return status.abort_time_limit
+        elif solstat in (status.MIP_dettime_limit_feasible,
+                         status.MIP_dettime_limit_infeasible):
+            return status.abort_dettime_limit
+        elif solstat in (status.MIP_abort_feasible,
+                         status.MIP_abort_infeasible):
+            return status.abort_user
+        elif solstat == status.MIP_optimal_infeasible:
+            return status.optimal_infeasible
+        elif solstat == status.MIP_infeasible_or_unbounded:
+            return status.infeasible_or_unbounded
+        elif solstat in (status.MIP_unbounded,
+                         status.MIP_benders_master_unbounded,
+                         status.benders_master_unbounded):
+            return status.unbounded
+        elif solstat in (status.feasible_relaxed_sum,
+                         status.MIP_feasible_relaxed_sum):
+            return status.feasible_relaxed_sum
+        elif solstat in (status.optimal_relaxed_sum,
+                         status.MIP_optimal_relaxed_sum):
+            return status.optimal_relaxed_sum
+        elif solstat in (status.feasible_relaxed_inf,
+                         status.MIP_feasible_relaxed_inf):
+            return status.feasible_relaxed_inf
+        elif solstat in (status.optimal_relaxed_inf,
+                         status.MIP_optimal_relaxed_inf):
+            return status.optimal_relaxed_inf
+        elif solstat in (status.feasible_relaxed_quad,
+                         status.MIP_feasible_relaxed_quad):
+            return status.feasible_relaxed_quad
+        elif solstat in (status.optimal_relaxed_quad,
+                         status.MIP_optimal_relaxed_quad):
+            return status.optimal_relaxed_quad
+        elif solstat == status.relaxation_unbounded:
+            return status.relaxation_unbounded
+        elif solstat in (status.feasible,
+                         status.MIP_feasible):
+            return status.feasible
+        elif solstat == status.benders_num_best:
+            return status.num_best
+        else:
+            return solstat
+
+    def _get_status(self, model):
+        """Map CPLEX status to CPXPY status."""
+        pfeas = model.solution.is_primal_feasible()
+        dfeas = model.solution.is_dual_feasible()
+        status = model.solution.status
+        solstat = self._handle_solve_status(model, model.solution.get_status())
+        if solstat in (status.node_limit_infeasible,
+                       status.fail_infeasible,
+                       status.mem_limit_infeasible,
+                       status.fail_infeasible_no_tree,
+                       status.num_best):
+            return s.SOLVER_ERROR
+        elif solstat in (status.abort_user,
+                         status.abort_iteration_limit,
+                         status.abort_time_limit,
+                         status.abort_dettime_limit,
+                         status.abort_obj_limit,
+                         status.abort_primal_obj_limit,
+                         status.abort_dual_obj_limit,
+                         status.abort_relaxed,
+                         status.first_order):
+            if pfeas:
+                return s.OPTIMAL_INACCURATE
+            else:
+                return s.SOLVER_ERROR
+        elif solstat in (status.node_limit_feasible,
+                         status.solution_limit,
+                         status.populate_solution_limit,
+                         status.fail_feasible,
+                         status.mem_limit_feasible,
+                         status.fail_feasible_no_tree,
+                         status.feasible):
+            if dfeas:
+                return s.OPTIMAL
+            else:
+                return s.OPTIMAL_INACCURATE
+        elif solstat in (status.optimal,
+                         status.optimal_tolerance,
+                         status.optimal_infeasible,
+                         status.optimal_populated,
+                         status.optimal_populated_tolerance):
+            return s.OPTIMAL
+        elif solstat in (status.infeasible,
+                         status.optimal_relaxed_sum,
+                         status.optimal_relaxed_inf,
+                         status.optimal_relaxed_quad):
+            return s.INFEASIBLE
+        elif solstat in (status.feasible_relaxed_quad,
+                         status.feasible_relaxed_inf,
+                         status.feasible_relaxed_sum):
+            return s.SOLVER_ERROR
+        elif solstat == status.infeasible_or_unbounded:
+            return s.INFEASIBLE
+        elif solstat == status.unbounded:
+            return s.UNBOUNDED
+        else:
+            return s.SOLVER_ERROR
+
     def add_model_lin_constr(self, model, variables,
-                             rows, ctype,
-                             nonzero_locs, mat, vec):
+                             rows, ctype, mat, vec):
         """Adds EQ/LEQ constraints to the model using the data from mat and vec.
 
         Parameters
@@ -349,8 +444,6 @@ class CPLEX(Solver):
             The rows to be constrained.
         ctype : CPLEX constraint type
             The type of constraint.
-        nonzero_locs : list of tuples
-            A list of all the nonzero locations.
         mat : SciPy COO matrix
             The matrix representing the constraints.
         vec : NDArray
@@ -365,12 +458,12 @@ class CPLEX(Solver):
         constr = []
         for i in rows:
             ind, val = [], []
-            for row, col in _select_row(nonzero_locs, i):
+            for row, col in _select_row(mat.keys(), i):
                 ind.append(variables[col])
-                val.append(mat[(row, col)])
+                val.append(mat[row, col])
             # Ignore empty constraints.
-            if len(ind) > 0:
-                # RPK: Would be faster if added in a batch.
+            if ind:
+                # TODO: Would be faster if added in batches.
                 constr.extend(list(
                     model.linear_constraints.add(
                         lin_expr=[cplex.SparsePair(ind=ind, val=val)],
@@ -381,7 +474,7 @@ class CPLEX(Solver):
         return constr
 
     def add_model_soc_constr(self, model, variables,
-                             rows, nonzero_locs, mat, vec):
+                             rows, mat, vec):
         """Adds SOC constraint to the model using the data from mat and vec.
 
         Parameters
@@ -392,8 +485,6 @@ class CPLEX(Solver):
             The problem variables.
         rows : range
             The rows to be constrained.
-        nonzero_locs : list of tuples
-            A list of all the nonzero locations.
         mat : SciPy COO matrix
             The matrix representing the constraints.
         vec : NDArray
@@ -411,11 +502,11 @@ class CPLEX(Solver):
         lin_rhs = []
         for i in rows:
             ind, val = [], []
-            for row, col in _select_row(nonzero_locs, i):
+            for row, col in _select_row(mat.keys(), i):
                 ind.append(variables[col])
                 val.append(mat[(row, col)])
             # Ignore empty constraints.
-            if len(ind) > 0:
+            if ind:
                 lin_expr_list.append((ind, val))
                 lin_rhs.append(vec[i])
             else:
