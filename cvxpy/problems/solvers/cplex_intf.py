@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
+from collections import namedtuple
 
 import cvxpy.interface as intf
 import cvxpy.settings as s
@@ -20,6 +21,14 @@ import cvxpy.lin_ops.lin_utils as lu
 import numpy as np
 from cvxpy.problems.solvers.solver import Solver
 from scipy.sparse import dok_matrix
+
+# Values used to distinguish between linear and quadratic constraints.
+_LIN, _QUAD = 0, 1
+# For internal bookkeeping, we have to separate linear indices from
+# quadratic indices. The "cpx_constrs" member of the results_dict will
+# contain namedtuples of (constr_type, index) where constr_type is either
+# _LIN or _QUAD.
+_CpxConstr = namedtuple("_CpxConstr", ["constr_type", "index"])
 
 
 def _select_row(tuple_list, item):
@@ -133,6 +142,7 @@ class CPLEX(Solver):
            and len(data[s.DIMS][s.SOC_DIM]) == 0:
             model = solver_cache.prev_result["model"]
             variables = solver_cache.prev_result["variables"]
+            # cpx_constrs contains CpxConstr namedtuples (see above).
             cpx_constrs = solver_cache.prev_result["cpx_constrs"]
             c_prev = solver_cache.prev_result["c"]
             A_prev = solver_cache.prev_result["A"]
@@ -169,19 +179,20 @@ class CPLEX(Solver):
 
                 # Update locations which have changed
                 for i in I_unique:
-
                     # Remove old constraint if it exists
-                    if cpx_constrs[i] is not None:
+                    if cpx_constrs[i].index is not None:
+                        assert cpx_constrs[i].constr_type == _LIN
+                        idx = cpx_constrs[i].index
                         # Disable the old constraint by setting all
                         # coefficients and rhs to zero. This way we don't
                         # have to worry about indices needing to shift.
                         # RPK: Correct?
-                        tmp = model.linear_constraints.get_rows(cpx_constrs[i])
+                        tmp = model.linear_constraints.get_rows(idx)
                         model.linear_constraints.set_linear_components(
-                            cpx_constrs[i],
+                            idx,
                             cplex.SparsePair(ind=tmp.ind, val=[0.0]*len(tmp.ind)))
-                        model.linear_constraints.set_rhs(cpx_constrs[i], 0.0)
-                        cpx_constrs[i] = None
+                        model.linear_constraints.set_rhs(idx, 0.0)
+                        cpx_constrs[i] = _CpxConstr(_LIN, None)
 
                     # Add new constraint
                     nonzero_loc = _select_row(A.keys(), i)
@@ -196,10 +207,11 @@ class CPLEX(Solver):
                             assert data[s.DIMS][s.EQ_DIM] <= i \
                                 < data[s.DIMS][s.EQ_DIM] + data[s.DIMS][s.LEQ_DIM]
                             ctype = "L"
-                        cpx_constrs[i] = list(model.linear_constraints.add(
+                        new_idx = list(model.linear_constraints.add(
                             lin_expr=[cplex.SparsePair(ind=ind, val=val)],
                             senses=ctype,
                             rhs=[b[i]]))[0]
+                        cpx_constrs[i] = _CpxConstr(_LIN, new_idx)
 
             else:
                 # Stay consistent with CPLEX's representation of the problem
@@ -209,6 +221,8 @@ class CPLEX(Solver):
         else:
             model = cplex.Cplex()
             variables = []
+            # cpx_constrs will contain CpxConstr namedtuples (see above).
+            cpx_constrs = []
             vtype = []
             if self.is_mip(data):
                 for i in range(n):
@@ -232,28 +246,32 @@ class CPLEX(Solver):
                 types="".join(vtype),
                 names=["x_%d" % i for i in range(n)]))
 
-            eq_constrs = self.add_model_lin_constr(model, variables,
-                                                   range(data[s.DIMS][s.EQ_DIM]),
-                                                   'E', A, b)
+            # Add equality constraints
+            cpx_constrs += [_CpxConstr(_LIN, x)
+                            for x in self.add_model_lin_constr(
+                                    model, variables,
+                                    range(data[s.DIMS][s.EQ_DIM]),
+                                    'E', A, b)]
+
+            # Add inequality (<=) constraints
             leq_start = data[s.DIMS][s.EQ_DIM]
             leq_end = data[s.DIMS][s.EQ_DIM] + data[s.DIMS][s.LEQ_DIM]
-            ineq_constrs = self.add_model_lin_constr(model, variables,
-                                                     range(leq_start, leq_end),
-                                                     'L', A, b)
+            cpx_constrs += [_CpxConstr(_LIN, x)
+                            for x in self.add_model_lin_constr(
+                                    model, variables,
+                                    range(leq_start, leq_end),
+                                    'L', A, b)]
+
+            # Add SOC constraints
             soc_start = leq_end
-            soc_constrs = []
-            new_leq_constrs = []
             for constr_len in data[s.DIMS][s.SOC_DIM]:
                 soc_end = soc_start + constr_len
                 soc_constr, new_leq, new_vars = self.add_model_soc_constr(
                     model, variables, range(soc_start, soc_end), A, b)
-                soc_constrs.append(soc_constr)
-                new_leq_constrs += new_leq
+                cpx_constrs.append(_CpxConstr(_QUAD, soc_constr))
+                cpx_constrs += [_CpxConstr(_LIN, x) for x in new_leq]
                 variables += new_vars
                 soc_start += constr_len
-
-            cpx_constrs = eq_constrs + ineq_constrs + \
-                soc_constrs + new_leq_constrs
 
         # Set verbosity
         if not verbose:
@@ -296,17 +314,21 @@ class CPLEX(Solver):
             results_dict["x"] = np.array(model.solution.get_values(variables))
             results_dict["status"] = self._get_status(model)
 
-            if self.is_mip(data):
-                pass
-            else:
-                # Only add duals if not a MIP.
+            # Only add duals if not a MIP.
+            if not self.is_mip(data):
                 vals = []
-                if len(cpx_constrs) > 0:
-                    vals.extend(model.solution.get_dual_values(
-                        [c for c in cpx_constrs if c is not None]))
-                # RPK: FIXME (use method in qcpdual.py to calculate qcp duals)
-                #vals.extend(for soc_constr)
-                #vals.extend(for new_leq_constr)
+                for con in cpx_constrs:
+                    if con.index is not None:
+                        if con.constr_type == _LIN:
+                            vals.append(model.solution.get_dual_values(con.index))
+                        else:
+                            assert con.constr_type == _QUAD
+                            # RPK: FIXME (use method in qcpdual.py to
+                            # calculate qcp duals)
+                            vals.append(0.0)
+                    else:
+                        # empty constraint
+                        vals.append(0.0)
                 results_dict["y"] = -np.array(vals)
         except:
             if solve_time < 0.0:
