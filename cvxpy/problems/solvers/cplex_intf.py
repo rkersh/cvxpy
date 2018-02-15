@@ -284,7 +284,8 @@ class CPLEX(Solver):
             pass
 
         # TODO user option to not compute duals.
-        # model.setParam("QCPDual", True)  # RPK: ?
+        model.parameters.preprocessing.qcpduals.set(
+            model.parameters.preprocessing.qcpduals.values.force)
 
         # RPK: Parameter support is functional, but not very convenient.
         #      The user must pass parameters using the numeric ID, and
