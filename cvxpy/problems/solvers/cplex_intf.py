@@ -486,12 +486,12 @@ class CPLEX(Solver):
         mat : SciPy COO matrix
             The matrix representing the constraints.
         vec : NDArray
-            The constant part of the constraints.
+            The RHS part of the constraints.
 
         Returns
         -------
         list
-            A list of constraints.
+            A list of new linear constraint indices.
         """
         import cplex
         constr = []
@@ -527,12 +527,14 @@ class CPLEX(Solver):
         mat : SciPy COO matrix
             The matrix representing the constraints.
         vec : NDArray
-            The constant part of the constraints.
+            The RHS part of the constraints.
 
         Returns
         -------
         tuple
-            A tuple of (QConstr, list of Constr, and list of variables).
+            A tuple of (a new quadratic constraint index, a list of new
+            supporting linear constr indices, and a list of new
+            supporting variable indices).
         """
         import cplex
         # Assume first expression (i.e. t) is nonzero.
