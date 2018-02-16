@@ -405,6 +405,7 @@ class CPLEX(Solver):
     def _get_status(self, model):
         """Map CPLEX status to CPXPY status."""
         pfeas = model.solution.is_primal_feasible()
+        # NOTE: dfeas is always false for a MIP.
         dfeas = model.solution.is_dual_feasible()
         status = model.solution.status
         solstat = self._handle_solve_status(model, model.solution.get_status())
