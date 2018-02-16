@@ -179,14 +179,21 @@ class CPLEX(Solver):
 
                 # Update locations which have changed
                 for i in I_unique:
-                    # Remove old constraint if it exists
+                    # To update a constraint, we first disable the old
+                    # constraint and then add a new constraint with the
+                    # modifications. This way we don't have to worry
+                    # about indices needing to shift. The old constraint
+                    # is disabled by setting all coefficients and the rhs
+                    # to zero.
+                    #
+                    # NOTE: This can change the relative order of the
+                    # constraints, which can result in performance
+                    # variability!
+
+                    # Disable the old constraint if it exists.
                     if cpx_constrs[i].index is not None:
                         assert cpx_constrs[i].constr_type == _LIN
                         idx = cpx_constrs[i].index
-                        # Disable the old constraint by setting all
-                        # coefficients and rhs to zero. This way we don't
-                        # have to worry about indices needing to shift.
-                        # RPK: Correct?
                         tmp = model.linear_constraints.get_rows(idx)
                         model.linear_constraints.set_linear_components(
                             idx,
