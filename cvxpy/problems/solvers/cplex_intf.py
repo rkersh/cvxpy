@@ -375,23 +375,31 @@ class CPLEX(Solver):
                          status.benders_master_unbounded):
             return status.unbounded
         elif solstat in (status.feasible_relaxed_sum,
-                         status.MIP_feasible_relaxed_sum):
-            return status.feasible_relaxed_sum
-        elif solstat in (status.optimal_relaxed_sum,
-                         status.MIP_optimal_relaxed_sum):
-            return status.optimal_relaxed_sum
-        elif solstat in (status.feasible_relaxed_inf,
-                         status.MIP_feasible_relaxed_inf):
-            return status.feasible_relaxed_inf
-        elif solstat in (status.optimal_relaxed_inf,
-                         status.MIP_optimal_relaxed_inf):
-            return status.optimal_relaxed_inf
-        elif solstat in (status.feasible_relaxed_quad,
-                         status.MIP_feasible_relaxed_quad):
-            return status.feasible_relaxed_quad
-        elif solstat in (status.optimal_relaxed_quad,
+                         status.MIP_feasible_relaxed_sum,
+                         status.optimal_relaxed_sum,
+                         status.MIP_optimal_relaxed_sum,
+                         status.feasible_relaxed_inf,
+                         status.MIP_feasible_relaxed_inf,
+                         status.optimal_relaxed_inf,
+                         status.MIP_optimal_relaxed_inf,
+                         status.feasible_relaxed_quad,
+                         status.MIP_feasible_relaxed_quad,
+                         status.optimal_relaxed_quad,
                          status.MIP_optimal_relaxed_quad):
-            return status.optimal_relaxed_quad
+            raise AssertionError(
+                "feasopt status encountered: {0}".format(solstat))
+        elif solstat in (status.conflict_feasible,
+                         status.conflict_minimal,
+                         status.conflict_abort_contradiction,
+                         status.conflict_abort_time_limit,
+                         status.conflict_abort_dettime_limit,
+                         status.conflict_abort_iteration_limit,
+                         status.conflict_abort_node_limit,
+                         status.conflict_abort_obj_limit,
+                         status.conflict_abort_memory_limit,
+                         status.conflict_abort_user):
+            raise AssertionError(
+                "conflict refiner status encountered: {0}".format(solstat))
         elif solstat == status.relaxation_unbounded:
             return status.relaxation_unbounded
         elif solstat in (status.feasible,
