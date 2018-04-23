@@ -191,15 +191,14 @@ class CPLEX(Solver):
                     # variability!
 
                     # Disable the old constraint if it exists.
-                    if cpx_constrs[i].index is not None:
-                        assert cpx_constrs[i].constr_type == _LIN
-                        idx = cpx_constrs[i].index
-                        tmp = model.linear_constraints.get_rows(idx)
-                        model.linear_constraints.set_linear_components(
-                            idx,
-                            cplex.SparsePair(ind=tmp.ind, val=[0.0]*len(tmp.ind)))
-                        model.linear_constraints.set_rhs(idx, 0.0)
-                        cpx_constrs[i] = _CpxConstr(_LIN, None)
+                    assert cpx_constrs[i].index is not None
+                    assert cpx_constrs[i].constr_type == _LIN
+                    idx = cpx_constrs[i].index
+                    tmp = model.linear_constraints.get_rows(idx)
+                    model.linear_constraints.set_linear_components(
+                        idx,
+                        cplex.SparsePair(ind=tmp.ind, val=[0.0]*len(tmp.ind)))
+                    model.linear_constraints.set_rhs(idx, 0.0)
 
                     # Add new constraint
                     nonzero_loc = _select_row(A.keys(), i)
@@ -500,16 +499,12 @@ class CPLEX(Solver):
             for row, col in _select_row(mat.keys(), i):
                 ind.append(variables[col])
                 val.append(mat[row, col])
-            # Ignore empty constraints.
-            if ind:
-                # TODO: Would be faster if added in batches.
-                constr.extend(list(
-                    model.linear_constraints.add(
-                        lin_expr=[cplex.SparsePair(ind=ind, val=val)],
-                        senses=ctype,
-                        rhs=[vec[i]])))
-            else:
-                constr.append(None)
+            # TODO: Would be faster if added in batches.
+            constr.extend(list(
+                model.linear_constraints.add(
+                    lin_expr=[cplex.SparsePair(ind=ind, val=val)],
+                    senses=ctype,
+                    rhs=[vec[i]])))
         return constr
 
     def add_model_soc_constr(self, model, variables,
