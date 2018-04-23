@@ -31,11 +31,6 @@ _LIN, _QUAD = 0, 1
 _CpxConstr = namedtuple("_CpxConstr", ["constr_type", "index"])
 
 
-def _select_row(tuple_list, item):
-    """Select all tuples from the list where first == item."""
-    return [(row, col) for row, col in tuple_list if row == item]
-
-
 class CPLEX(Solver):
     """An interface for the CPLEX solver.
     """
@@ -178,6 +173,7 @@ class CPLEX(Solver):
                 I_unique = list(set(I) | set(np.where(b_diff)[0]))
 
                 # Update locations which have changed
+                csr = A.tocsr()
                 for i in I_unique:
                     # To update a constraint, we first disable the old
                     # constraint and then add a new constraint with the
@@ -191,34 +187,30 @@ class CPLEX(Solver):
                     # variability!
 
                     # Disable the old constraint if it exists.
-                    if cpx_constrs[i].index is not None:
-                        assert cpx_constrs[i].constr_type == _LIN
-                        idx = cpx_constrs[i].index
-                        tmp = model.linear_constraints.get_rows(idx)
-                        model.linear_constraints.set_linear_components(
-                            idx,
-                            cplex.SparsePair(ind=tmp.ind, val=[0.0]*len(tmp.ind)))
-                        model.linear_constraints.set_rhs(idx, 0.0)
-                        cpx_constrs[i] = _CpxConstr(_LIN, None)
+                    assert cpx_constrs[i].index is not None
+                    assert cpx_constrs[i].constr_type == _LIN
+                    idx = cpx_constrs[i].index
+                    tmp = model.linear_constraints.get_rows(idx)
+                    model.linear_constraints.set_linear_components(
+                        idx,
+                        cplex.SparsePair(ind=tmp.ind, val=[0.0]*len(tmp.ind)))
+                    model.linear_constraints.set_rhs(idx, 0.0)
 
                     # Add new constraint
-                    nonzero_loc = _select_row(A.keys(), i)
-                    if nonzero_loc:
-                        ind, val = [], []
-                        for row, col in nonzero_loc:
-                            ind.append(variables[col])
-                            val.append(A[(row, col)])
-                        if i < data[s.DIMS][s.EQ_DIM]:
-                            ctype = "E"
-                        else:
-                            assert data[s.DIMS][s.EQ_DIM] <= i \
-                                < data[s.DIMS][s.EQ_DIM] + data[s.DIMS][s.LEQ_DIM]
-                            ctype = "L"
-                        new_idx = list(model.linear_constraints.add(
-                            lin_expr=[cplex.SparsePair(ind=ind, val=val)],
-                            senses=ctype,
-                            rhs=[b[i]]))[0]
-                        cpx_constrs[i] = _CpxConstr(_LIN, new_idx)
+
+                    ind = [variables[x] for x in csr[i].indices]
+                    val = [x for x in csr[i].data]
+                    if i < data[s.DIMS][s.EQ_DIM]:
+                        ctype = "E"
+                    else:
+                        assert data[s.DIMS][s.EQ_DIM] <= i \
+                            < data[s.DIMS][s.EQ_DIM] + data[s.DIMS][s.LEQ_DIM]
+                        ctype = "L"
+                    new_idx = list(model.linear_constraints.add(
+                        lin_expr=[cplex.SparsePair(ind=ind, val=val)],
+                        senses=ctype,
+                        rhs=[b[i]]))[0]
+                    cpx_constrs[i] = _CpxConstr(_LIN, new_idx)
 
             else:
                 # Stay consistent with CPLEX's representation of the problem
@@ -494,22 +486,21 @@ class CPLEX(Solver):
             A list of new linear constraint indices.
         """
         import cplex
-        constr = []
+        constr, lin_expr, rhs = [], [], []
+        csr = mat.tocsr()
         for i in rows:
-            ind, val = [], []
-            for row, col in _select_row(mat.keys(), i):
-                ind.append(variables[col])
-                val.append(mat[row, col])
-            # Ignore empty constraints.
-            if ind:
-                # TODO: Would be faster if added in batches.
-                constr.extend(list(
-                    model.linear_constraints.add(
-                        lin_expr=[cplex.SparsePair(ind=ind, val=val)],
-                        senses=ctype,
-                        rhs=[vec[i]])))
-            else:
-                constr.append(None)
+            ind = [variables[x] for x in csr[i].indices]
+            val = [x for x in csr[i].data]
+            lin_expr.append([ind, val])
+            rhs.append(vec[i])
+        # For better performance, we add the contraints in a batch.
+        if lin_expr:
+            assert len(lin_expr) == len(rhs)
+            constr.extend(list(
+                model.linear_constraints.add(
+                    lin_expr=lin_expr,
+                    senses=ctype * len(lin_expr),
+                    rhs=rhs)))
         return constr
 
     def add_model_soc_constr(self, model, variables,
@@ -538,14 +529,11 @@ class CPLEX(Solver):
         """
         import cplex
         # Assume first expression (i.e. t) is nonzero.
-        lin_expr_list = []
-        soc_vars = []
-        lin_rhs = []
+        lin_expr_list, soc_vars, lin_rhs = [], [], []
+        csr = mat.tocsr()
         for i in rows:
-            ind, val = [], []
-            for row, col in _select_row(mat.keys(), i):
-                ind.append(variables[col])
-                val.append(mat[(row, col)])
+            ind = [variables[x] for x in csr[i].indices]
+            val = [x for x in csr[i].data]
             # Ignore empty constraints.
             if ind:
                 lin_expr_list.append((ind, val))
