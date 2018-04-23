@@ -494,17 +494,23 @@ class CPLEX(Solver):
         """
         import cplex
         constr = []
+        lin_expr = []
+        rhs = []
         for i in rows:
             ind, val = [], []
             for row, col in _select_row(mat.keys(), i):
                 ind.append(variables[col])
                 val.append(mat[row, col])
-            # TODO: Would be faster if added in batches.
+            lin_expr.append([ind, val])
+            rhs.append(vec[i])
+        # For better performance, we add the contraints in a batch.
+        if lin_expr:
+            assert len(lin_expr) == len(rhs)
             constr.extend(list(
                 model.linear_constraints.add(
-                    lin_expr=[cplex.SparsePair(ind=ind, val=val)],
-                    senses=ctype,
-                    rhs=[vec[i]])))
+                    lin_expr=lin_expr,
+                    senses=ctype * len(lin_expr),
+                    rhs=rhs)))
         return constr
 
     def add_model_soc_constr(self, model, variables,
