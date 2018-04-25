@@ -131,7 +131,7 @@ class CPLEX(Solver):
 
         solver_cache = cached_data[self.name()]
 
-        # TODO warmstart with SOC constraints.
+        # TODO: warmstart with SOC constraints.
         if warm_start and solver_cache.prev_result is not None \
            and len(data[s.DIMS][s.SOC_DIM]) == 0:
             model = solver_cache.prev_result["model"]
@@ -281,15 +281,15 @@ class CPLEX(Solver):
             # By default the output will be sent to stdout.
             pass
 
-        # TODO user option to not compute duals.
+        # TODO: user option to not compute duals.
         model.parameters.preprocessing.qcpduals.set(
             model.parameters.preprocessing.qcpduals.values.force)
 
-        # RPK: Parameter support is functional, but not very convenient.
-        #      The user must pass parameters using the numeric ID, and
-        #      raw values (i.e., no enum support). We also use an internal
-        #      function here to set the parameters (not the best). Another
-        #      option would be to use reflection (i.e., getattr).
+        # TODO: Parameter support is functional, but not very convenient.
+        # The user must pass parameters using the numeric ID, and raw
+        # values (i.e., no enum support). We also use an internal
+        # function here to set the parameters (not the best). Another
+        # option would be to use reflection (i.e., getattr).
         kwargs = sorted(solver_opts.keys())
         if "cplex_params" in kwargs:
             for key, value in solver_opts["cplex_params"].items():
