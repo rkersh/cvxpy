@@ -318,16 +318,12 @@ class CPLEX(Solver):
             if not self.is_mip(data):
                 vals = []
                 for con in cpx_constrs:
-                    if con.index is not None:
-                        if con.constr_type == _LIN:
-                            vals.append(model.solution.get_dual_values(con.index))
-                        else:
-                            assert con.constr_type == _QUAD
-                            # RPK: FIXME (use method in qcpdual.py to
-                            # calculate qcp duals)
-                            vals.append(0.0)
+                    assert con.index is not None
+                    if con.constr_type == _LIN:
+                        vals.append(model.solution.get_dual_values(con.index))
                     else:
-                        # empty constraint
+                        assert con.constr_type == _QUAD
+                        # Quadratic constraints not queried directly.
                         vals.append(0.0)
                 results_dict["y"] = -np.array(vals)
         except:
