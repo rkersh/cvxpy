@@ -51,7 +51,6 @@ class CPLEX(Solver):
         """Imports the solver.
         """
         import cplex
-        # RPK: Not sure if this is necc.
         cplex  # For flake8
 
     def matrix_intf(self):
