@@ -17,7 +17,8 @@ The model solved here is
 """
 from __future__ import print_function
 import sys
-from cvxpy import (Bool, Variable, sum_entries, mul_elemwise, Problem,
+import cvxpy
+from cvxpy import (Variable, multiply, Problem,
                    Minimize, CPLEX)
 
 # capacity   -- a list/array of facility capacity
@@ -44,12 +45,12 @@ def facility(use_benders=False):
     # Create variables. We have variables
     # open_[j]        if location j is open.
     # supply[i][j]]   how much client i is supplied from location j
-    open_ = Bool(num_locations)
+    open_ = Variable(num_locations, boolean=True)
 
     constraints = [0 <= open_j for open_j in open_]
     constraints += [open_j <= 1 for open_j in open_]
 
-    supply = Variable(num_clients, num_locations)
+    supply = Variable((num_clients, num_locations))
 
     constraints += [0.0 <= supply[i, j]
                     for j in range(num_locations)
@@ -60,27 +61,27 @@ def facility(use_benders=False):
 
     # Constraint: Each client i must be assigned to exactly one location:
     #   sum(j in nbLocations) supply[i][j] == 1  for each i in nbClients
-    constraints += [sum_entries(supply[i, :]) == 1.0
+    constraints += [cvxpy.sum(supply[i, :]) == 1.0
                     for i in range(num_clients)]
 
     # Constraint: For each location j, the capacity of the location must
     #             be respected:
     #   sum(i in nbClients) supply[i][j] <= capacity[j] * open_[j]
-    constraints += [sum_entries(supply[:, j]) - CAPACITY[j] * open_[j] <= 0.0
+    constraints += [cvxpy.sum(supply[:, j]) - CAPACITY[j] * open_[j] <= 0.0
                     for j in range(num_locations)]
 
     # Objective: Minimize the sum of fixed costs for using a location
     #            and the costs for serving a client from a specific
     #            location.
-    obj = sum_entries(mul_elemwise(FIXED_COST, open_))
-    obj += sum_entries(mul_elemwise(COST, supply.T))
+    obj = cvxpy.sum(multiply(FIXED_COST, open_))
+    obj += cvxpy.sum(multiply(COST, supply.T))
 
     prob = Problem(Minimize(obj), constraints)
 
     cplex_params = {}
     if use_benders:
         # Set CPXPARAM_Benders_Strategy (1501) to FULL (3)
-        cplex_params[1501] = 3
+        cplex_params["benders.strategy"] = 3
 
     prob.solve(solver=CPLEX, verbose=True, cplex_params=cplex_params,
                cplex_filename="facility.lp")

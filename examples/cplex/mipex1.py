@@ -17,8 +17,8 @@ The MIP problem solved in this example is:
       x4
 """
 from __future__ import print_function
-from cvxpy import (Variable, Maximize, mul_elemwise, sum_entries, Problem,
-                   CPLEX, Int)
+import cvxpy
+from cvxpy import (Variable, Maximize, Problem, CPLEX)
 
 
 INF = 1.0e+20
@@ -42,10 +42,10 @@ constr.append(x[1] - 3.5 * x[3] == 0.0)
 
 # Force x[3] to be integral. This is equivalent to changing the type
 # of the variable from continous to integer.
-constr.append(x[3] == Int())
+constr.append(x[3] == Variable(integer=True))
 
 # Objective
-obj = Maximize(sum_entries(mul_elemwise(OBJ, x)))
+obj = Maximize(cvxpy.sum(cvxpy.multiply(OBJ, x)))
 
 # Solve and display results
 prob = Problem(obj, constr)

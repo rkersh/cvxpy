@@ -17,8 +17,8 @@ consists of assigning an opponent to each team each week in order to
 maximize the total of the incentives.
 """
 from collections import namedtuple
-
-from cvxpy import Bool, sum_entries, Problem, Maximize, CPLEX
+import cvxpy as cvx
+from cvxpy import (Variable, Problem, Maximize, CPLEX)
 
 
 # ----------------------------------------------------------------------------
@@ -81,7 +81,7 @@ def build_sports():
                else nb_inter_divisional
                for m in matches}
 
-    plays = Bool(len(matches), len(weeks))
+    plays = Variable((len(matches), len(weeks)), boolean=True)
     constraints = []
 
     # Implicit bounds:
@@ -92,7 +92,7 @@ def build_sports():
     #                 for m in range(len(matches))
     #                 for w in range(len(weeks))]
 
-    constraints += [sum_entries(plays[m_idx, :]) == nb_play[m]
+    constraints += [cvx.sum(plays[m_idx, :]) == nb_play[m]
                     for m_idx, m in enumerate(matches)]
 
     # Each team must play exactly once in a week.
@@ -118,7 +118,7 @@ def build_sports():
 
     # postpone divisional matches as much as possible
     # we weight each play variable with the square of w.
-    obj = sum([sum_entries(plays[m_idx, w_idx] * w * w)
+    obj = sum([cvx.sum(plays[m_idx, w_idx] * w * w)
                for w_idx, w in enumerate(weeks)
                for m_idx, m in enumerate(matches)
                if m.is_divisional])
@@ -174,7 +174,8 @@ def main():
     # Build the model
     model = build_sports()
     # Solve the model.
-    model.solve(solver=CPLEX, verbose=False, cplex_filename="sport_scheduling.lp")
+    model.solve(solver=CPLEX, verbose=False,
+                cplex_filename="sport_scheduling.lp")
     print_metrics(model)
     print_sports_solution(model)
 

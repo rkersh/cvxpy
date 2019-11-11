@@ -17,10 +17,10 @@ BIGM = 999.0
 
 # Variables
 produce = cvxpy.Variable(nmonths)
-use = cvxpy.Variable(nmonths, nproducts)
-is_used = cvxpy.Bool(nmonths, nproducts)
-buy = cvxpy.Variable(nmonths, nproducts)
-store = cvxpy.Variable(nmonths, nproducts)
+use = cvxpy.Variable((nmonths, nproducts))
+is_used = cvxpy.Variable((nmonths, nproducts), boolean=True)
+buy = cvxpy.Variable((nmonths, nproducts))
+store = cvxpy.Variable((nmonths, nproducts))
 
 # Objective
 obj = None
@@ -59,13 +59,13 @@ for i in range(nmonths):
     # Constraints on food composition
     constraints.append(
         3.0 * produce[i] <=
-        cvxpy.sum_entries(cvxpy.mul_elemwise(hardness, use[i, :].T)))
+        cvxpy.sum(cvxpy.multiply(hardness, use[i, :].T)))
 
     constraints.append(
         6.0 * produce[i] >=
-        cvxpy.sum_entries(cvxpy.mul_elemwise(hardness, use[i, :].T)))
+        cvxpy.sum(cvxpy.multiply(hardness, use[i, :].T)))
 
-    constraints.append(produce[i] == cvxpy.sum_entries(use[i, :]))
+    constraints.append(produce[i] == cvxpy.sum(use[i, :]))
 
     # Raw oil can be stored for later use
     if i == 0:
@@ -86,7 +86,7 @@ for i in range(nmonths):
 
     # The food cannot use more than 3 oils (or at least two oils must not
     # be used).
-    constraints.append(cvxpy.sum_entries(is_used[i, :]) <= 3.0)
+    constraints.append(cvxpy.sum(is_used[i, :]) <= 3.0)
 
     # If products v1 or v2 are used, then product o3 is also used.
     constraints.append(is_used[i, o3] - is_used[i, v1] >= 0.0)
@@ -94,8 +94,8 @@ for i in range(nmonths):
 
     # Objective Function
     expr = (150.0 * produce[i])
-    expr -= cvxpy.sum_entries(cvxpy.mul_elemwise(cost[i], buy[i, :].T))
-    expr -= 5.0 * cvxpy.sum_entries(store[i, :])
+    expr -= cvxpy.sum(cvxpy.multiply(cost[i], buy[i, :].T))
+    expr -= 5.0 * cvxpy.sum(store[i, :])
     if obj is None:
         obj = expr
     else:

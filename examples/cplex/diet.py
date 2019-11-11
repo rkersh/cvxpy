@@ -2,8 +2,8 @@
 Mimimize the cost of a diet subject to nutritional constraints.
 """
 from __future__ import print_function
-from cvxpy import (Variable, Problem, Minimize, mul_elemwise, CPLEX,
-                   sum_entries)
+import cvxpy
+from cvxpy import (Variable, Problem, Minimize, CPLEX)
 
 FOOD_COST = [1.84, 2.19, 1.84, 1.44, 2.29, 0.77, 1.29, 0.6, 0.72]
 FOOD_MIN = [0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -34,12 +34,12 @@ def main():
 
     # add constraints to specify limits for each of the nutrients
     for nutr_min, nutr_per, nutr_max in zip(NUTR_MIN, NUTR_PER, NUTR_MAX):
-        expr = sum_entries(mul_elemwise(nutr_per, x))
+        expr = cvxpy.sum(cvxpy.multiply(nutr_per, x))
         constraints += [nutr_min <= expr,
                         expr <= nutr_max]
 
     # we want to minimize costs
-    prob = Problem(Minimize(sum_entries(mul_elemwise(FOOD_COST, x))),
+    prob = Problem(Minimize(cvxpy.sum(cvxpy.multiply(FOOD_COST, x))),
                    constraints)
     prob.solve(solver=CPLEX, verbose=True, cplex_filename="diet.lp")
 
